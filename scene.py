@@ -49,7 +49,7 @@ class Scene:
         ]
         
         self.camera = camera.Camera(
-            position = [-5, 0, 0]
+            position = [-8, 0, 0]
         )
 
         self.objectCounts = np.array([len(self.spheres), len(self.planes)], dtype = np.int32)

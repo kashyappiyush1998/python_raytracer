@@ -33,6 +33,8 @@ struct Plane {
 struct RenderState {
     float t;
     vec3 color;
+    vec3 position;
+    vec3 normal;
     bool hit;
 };
 
@@ -50,7 +52,7 @@ layout(std430, binding = 2) buffer planeData {
 };
 uniform ivec2 objectCounts;
 
-vec3 rayColor(Ray ray);
+RenderState trace(Ray ray);
 
 void hit(Ray ray, Sphere sphere, float tMin, float tMax, inout RenderState renderstate);
 
@@ -67,48 +69,64 @@ void main() {
     ray.origin = viewer.position;
     ray.direction = viewer.forwards + horizontalCoefficient * viewer.right + verticalCoefficient * viewer.up;
 
-    vec3 pixel = rayColor(ray);
+    vec3 pixel = vec3(1.0);
+
+    for (int i = 0; i < 4; i++) {
+
+        RenderState renderState = trace(ray);
+
+        //early exit
+        if (!renderState.hit) {
+            break;
+        }
+        
+        //unpack color
+        pixel = pixel * renderState.color;
+
+        //set up ray for next trace
+        ray.origin = renderState.position;
+        ray.direction = reflect(ray.direction, renderState.normal);
+
+    }
 
     imageStore(img_output, pixel_coords, vec4(pixel,1.0));
 }
 
-vec3 rayColor(Ray ray) {
+RenderState trace(Ray ray) {
 
-    vec3 color = vec3(0.0);
+    RenderState renderState;
+    renderState.color = vec3(1.0);
+    bool hitSomething = false;
     
     float nearestHit = 999999999;
-    bool hitSomething = false;
-    RenderState renderState;
     
     for (int i = 0; i < objectCounts.x; i++) {
 
         hit(ray, spheres[i], 0.001, nearestHit, renderState);
 
         if (renderState.hit) {
-            nearestHit = renderState.t;
             hitSomething = true;
+            nearestHit = renderState.t;
         }
     }
 
     for (int i = 0; i < objectCounts.y; i++) {
     
        hit(ray, planes[i], 0.001, nearestHit, renderState);
-    
+       
        if (renderState.hit) {
-            nearestHit = renderState.t;
             hitSomething = true;
+            nearestHit = renderState.t;
         }
     }
-        
-    if (hitSomething) {
 
-        color = renderState.color;
-    }
+    renderState.hit = hitSomething;
         
-    return color;
+    return renderState;
 }
 
 void hit(Ray ray, Sphere sphere, float tMin, float tMax, inout RenderState renderState) {
+
     vec3 co = ray.origin - sphere.center;
     float a = dot(ray.direction, ray.direction);
     float b = 2 * dot(ray.direction, co);
@@ -120,13 +138,15 @@ void hit(Ray ray, Sphere sphere, float tMin, float tMax, inout RenderState rende
         float t = (-b - sqrt(discriminant)) / (2 * a);
 
         if (t > tMin && t < tMax) {
+
+            renderState.position = ray.origin + t * ray.direction;
+            renderState.normal = normalize(renderState.position - sphere.center);
             renderState.t = t;
             renderState.color = sphere.color;
             renderState.hit = true;
             return;
         }
     }
-
     renderState.hit = false;
 }
 
@@ -147,13 +167,14 @@ void hit(Ray ray, Plane plane, float tMin, float tMax, inout RenderState renderS
             float v = dot(testDirection, plane.bitangent);
 
             if (u > plane.uMin && u < plane.uMax && v > plane.vMin && v < plane.vMax) {
+                renderState.position = testPoint;
                 renderState.t = t;
                 renderState.color = plane.color;
+                renderState.normal = plane.normal;
                 renderState.hit = true;
                 return;
             }
         }
     }
-
     renderState.hit = false;
 }
