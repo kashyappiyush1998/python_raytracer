@@ -1,6 +1,7 @@
 from config import *
 import sphere
 import plane
+import light
 
 class Buffer:
 
@@ -62,6 +63,20 @@ class Buffer:
         self.hostMemory[baseIndex + 15]                     = _plane.vMax
 
         self.hostMemory[baseIndex + 16] = _plane.material_index
+        self.elements_updated += 1
+        
+    def recordLight(self, i: int, _light: light.Light) -> None:
+        """
+            Record the given light in position i, if this exceeds the buffer size,
+            the light is not recorded.
+        """
+        
+        baseIndex = self.floatCount * i
+        
+        # light: (x y z s) (r g b -)
+        self.hostMemory[baseIndex : baseIndex + 3] = _light.position[:]
+        self.hostMemory[baseIndex + 3] = _light.strength
+        self.hostMemory[baseIndex + 4 : baseIndex + 7] = _light.color[:]
         self.elements_updated += 1
     
     def readFrom(self) -> None:
