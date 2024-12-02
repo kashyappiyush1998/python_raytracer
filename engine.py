@@ -22,6 +22,7 @@ class Engine:
         self.screenHeight = height
 
         self.makeAssets()
+        self.createNoiseTexture()
     
     def createShader(self, vertexFilepath, fragmentFilepath):
         """
@@ -67,6 +68,41 @@ class Engine:
                                         "shaders/frameBufferFragment.txt")
         
         self.rayTracerShader = self.createComputeShader("shaders/rayTracer.txt")
+
+    def createNoiseTexture(self) -> None:
+
+        """
+            generate four screens' worth of noise
+        """
+
+        self.noiseData = np.zeros(self.screenWidth * self.screenHeight * 16, dtype = np.float32)
+
+        # random noise: (x y z -)
+        for i in range(self.screenWidth * self.screenHeight * 4):
+            radius = np.random.uniform(low=0.0, high=0.99)
+            theta = np.random.uniform(low=0.0, high=2*np.pi)
+            phi = np.random.uniform(low=0.0, high=np.pi)
+
+            variation = np.array(
+                [
+                    radius * np.cos(theta) * np.cos(phi), 
+                    radius * np.sin(theta) * np.cos(phi), 
+                    radius * np.sin(phi)
+                ], dtype=np.float32
+            )
+
+            self.noiseData[4*i:4*i+3] = variation[:]
+        
+        self.noiseTexture = glGenTextures(1)
+        glActiveTexture(GL_TEXTURE2)
+        glBindTexture(GL_TEXTURE_2D, self.noiseTexture)
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F,4 * self.screenWidth, self.screenHeight, 0, GL_RGBA, GL_FLOAT,bytes(self.noiseData))
     
     def updateScene(self, _scene: scene.Scene) -> None:
 
@@ -99,7 +135,9 @@ class Engine:
 
         if _scene.outDated:
             self.updateScene(_scene)
-        
+
+        glBindImageTexture(3, self.noiseTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F)
+
     def renderScene(self, _scene: scene.Scene) -> None:
         """
             Draw all objects in the scene
@@ -136,4 +174,5 @@ class Engine:
         self.colorBuffer.destroy()
         self.sphereBuffer.destroy()
         self.planeBuffer.destroy()
+        glDeleteTextures(1, (self.noiseTexture,))
         glDeleteProgram(self.shader)

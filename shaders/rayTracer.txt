@@ -4,6 +4,7 @@ struct Sphere {
     vec3 center;
     float radius;
     vec3 color;
+    float roughness;
 };
 
 struct Camera {
@@ -28,6 +29,7 @@ struct Plane {
     vec3 normal;
     float vMax;
     vec3 color;
+    float roughness;
 };
 
 struct RenderState {
@@ -35,6 +37,7 @@ struct RenderState {
     vec3 color;
     vec3 position;
     vec3 normal;
+    float roughness;
     bool hit;
 };
 
@@ -51,6 +54,7 @@ layout(std430, binding = 2) buffer planeData {
     Plane[] planes;
 };
 uniform ivec2 objectCounts;
+layout(rgba32f, binding = 3) readonly uniform image2D noise;
 
 RenderState trace(Ray ray);
 
@@ -62,34 +66,51 @@ void main() {
 
     ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
     ivec2 screen_size = imageSize(img_output);
-    float horizontalCoefficient = ((float(pixel_coords.x) * 2 - screen_size.x) / screen_size.x);
-    float verticalCoefficient = ((float(pixel_coords.y) * 2 - screen_size.y) / screen_size.x);
 
-    Ray ray;
-    ray.origin = viewer.position;
-    ray.direction = viewer.forwards + horizontalCoefficient * viewer.right + verticalCoefficient * viewer.up;
+    vec3 final_color = vec3(0.0);
+    for(int i = 0; i < 4; i++) {
+        vec2 screenDeflection = imageLoad(
+            noise, 
+            ivec2(
+                pixel_coords.x + i * screen_size.x,
+                pixel_coords.y
+            )
+        ).xy;
+    
 
-    vec3 pixel = vec3(1.0);
+        float horizontalCoefficient = ((float(pixel_coords.x) * 2 - screen_size.x) / screen_size.x);
+        float verticalCoefficient = ((float(pixel_coords.y) * 2 - screen_size.y) / screen_size.x);
 
-    for (int i = 0; i < 4; i++) {
+        Ray ray;
+        ray.origin = viewer.position;
+        ray.direction = viewer.forwards + horizontalCoefficient * viewer.right + verticalCoefficient * viewer.up;
 
-        RenderState renderState = trace(ray);
+        vec3 pixel = vec3(1.0);
 
-        //early exit
-        if (!renderState.hit) {
-            break;
+        for (int bounce = 0; bounce < 4; bounce++) {
+
+            RenderState renderState = trace(ray);
+
+            //early exit
+            if (!renderState.hit) {
+                break;
+            }
+            
+            //unpack color
+            pixel = pixel * renderState.color;
+
+            //set up ray for next trace
+            ray.origin = renderState.position;
+            ray.direction = reflect(ray.direction, renderState.normal);
+
+            vec3 variation = imageLoad(noise, ivec2(pixel_coords.x+bounce*screen_size.x, pixel_coords.y)).xyz;
+
+            ray.direction = normalize(ray.direction + renderState.roughness * variation);
         }
-        
-        //unpack color
-        pixel = pixel * renderState.color;
-
-        //set up ray for next trace
-        ray.origin = renderState.position;
-        ray.direction = reflect(ray.direction, renderState.normal);
-
+        final_color += 0.25 * pixel;
     }
 
-    imageStore(img_output, pixel_coords, vec4(pixel,1.0));
+    imageStore(img_output, pixel_coords, vec4(final_color,1.0));
 }
 
 RenderState trace(Ray ray) {
@@ -143,6 +164,7 @@ void hit(Ray ray, Sphere sphere, float tMin, float tMax, inout RenderState rende
             renderState.normal = normalize(renderState.position - sphere.center);
             renderState.t = t;
             renderState.color = sphere.color;
+            renderState.roughness = sphere.roughness;
             renderState.hit = true;
             return;
         }
@@ -171,6 +193,7 @@ void hit(Ray ray, Plane plane, float tMin, float tMax, inout RenderState renderS
                 renderState.t = t;
                 renderState.color = plane.color;
                 renderState.normal = plane.normal;
+                renderState.roughness = plane.roughness;
                 renderState.hit = true;
                 return;
             }
