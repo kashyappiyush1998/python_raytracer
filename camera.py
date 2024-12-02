@@ -11,7 +11,6 @@ class Camera:
 
             Parameters:
                 position (array [3,1])
-                direction (array [3,1])
         """
 
         self.position = np.array(position, dtype=np.float32)

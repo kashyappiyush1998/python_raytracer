@@ -6,11 +6,7 @@ class Plane:
     """
 
 
-    def __init__(
-        self, normal: list[float], tangent: list[float], 
-        bitangent: list[float], uMin: float, 
-        uMax: float, vMin: float, vMax: float, 
-        center: list[float], color: list[float], roughness: float):
+    def __init__(self, normal, tangent, bitangent, uMin, uMax, vMin, vMax, center, material_index):
         """
             Create a new plane
 
@@ -20,7 +16,7 @@ class Plane:
                 bitangent (array [3,1])
                 uMin,uMax,vMin,vMax (float) constraints, u: tangent, v: bitangent
                 center (array [3,1])
-                color (array [3,1])
+                material_index int
         """
 
         self.normal = np.array(normal, dtype=np.float32)
@@ -31,5 +27,4 @@ class Plane:
         self.vMin = vMin
         self.vMax = vMax
         self.center = np.array(center, dtype=np.float32)
-        self.color = np.array(color, dtype=np.float32)
-        self.roughness = roughness
+        self.material_index = material_index

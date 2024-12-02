@@ -28,17 +28,25 @@ struct Plane {
     float vMin;
     vec3 normal;
     float vMax;
-    vec3 color;
-    float roughness;
+    float material;
 };
 
 struct RenderState {
     float t;
     vec3 color;
+    vec3 emissive;
     vec3 position;
     vec3 normal;
     bool hit;
     float roughness;
+};
+
+struct Material {
+    vec3 albedo;
+    vec3 emissive;
+    float gloss;
+    vec3 normal;
+    vec3 specular;
 };
 
 // input/output
@@ -53,8 +61,9 @@ layout(std430, binding = 1) buffer sphereData {
 layout(std430, binding = 2) buffer planeData {
     Plane[] planes;
 };
-uniform ivec2 objectCounts;
 layout(rgba32f, binding = 3) readonly uniform image2D noise;
+layout(rgba32f, binding = 4) readonly uniform image2DArray megaTexture;
+uniform ivec2 objectCounts;
 
 RenderState trace(Ray ray);
 
@@ -62,13 +71,15 @@ void hit(Ray ray, Sphere sphere, float tMin, float tMax, inout RenderState rende
 
 void hit(Ray ray, Plane plane, float tMin, float tMax, inout RenderState renderstate);
 
+Material sample_material(float index, float u, float v);
+
 void main() {
 
     ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
     ivec2 screen_size = imageSize(img_output);
 
     vec3 finalColor = vec3(0.0);
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 2; i++) {
 
         vec2 screenDeflection = imageLoad(
             noise, 
@@ -82,7 +93,7 @@ void main() {
         horizontalCoefficient = (horizontalCoefficient * 2 - screen_size.x) / screen_size.x;
         
         float verticalCoefficient = float(pixel_coords.y) + screenDeflection.y;
-        verticalCoefficient = (verticalCoefficient * 2 - screen_size.y) / screen_size.x;
+        verticalCoefficient = (verticalCoefficient * 2 - screen_size.y) / screen_size.y;
 
         Ray ray;
         ray.origin = viewer.position;
@@ -91,6 +102,8 @@ void main() {
         vec3 pixel = vec3(1.0);
 
         for (int bounce = 0; bounce < 4; bounce++) {
+        
+
             RenderState renderState = trace(ray);
 
             //early exit
@@ -99,7 +112,7 @@ void main() {
             }
         
             //unpack color
-            pixel = pixel * renderState.color;
+            pixel = (pixel * renderState.color) + renderState.emissive;
 
             //set up ray for next trace
             ray.origin = renderState.position;
@@ -115,7 +128,7 @@ void main() {
 
         }
 
-        finalColor += 0.25 * pixel;
+        finalColor += 0.5 * pixel;
     }
 
     imageStore(img_output, pixel_coords, vec4(finalColor,1.0));
@@ -176,6 +189,7 @@ void hit(Ray ray, Sphere sphere, float tMin, float tMax, inout RenderState rende
             renderState.t = t;
             renderState.color = sphere.color;
             renderState.roughness = sphere.roughness;
+            renderState.emissive = vec3(0);
             renderState.hit = true;
             return;
         }
@@ -200,15 +214,41 @@ void hit(Ray ray, Plane plane, float tMin, float tMax, inout RenderState renderS
             float v = dot(testDirection, plane.bitangent);
 
             if (u > plane.uMin && u < plane.uMax && v > plane.vMin && v < plane.vMax) {
+
+                u = (u - plane.uMin) / (plane.uMax - plane.uMin);
+                v = (v - plane.vMin) / (plane.vMax - plane.vMin);
+
+                Material material = sample_material(plane.material, u, v);
+
                 renderState.position = testPoint;
                 renderState.t = t;
-                renderState.color = plane.color;
-                renderState.roughness = plane.roughness;
-                renderState.normal = plane.normal;
+                renderState.color = material.albedo;
+                renderState.emissive = material.emissive;
+                renderState.roughness = max(0, 1.0 - material.gloss);
+
+                // maps tangent space into world space
+                mat3 TBN = mat3(plane.tangent, plane.bitangent, plane.normal);
+                renderState.normal = TBN * material.normal;
                 renderState.hit = true;
                 return;
             }
         }
     }
     renderState.hit = false;
+}
+
+Material sample_material(float index, float u, float v) {
+
+    Material material;
+    ivec3 baseCoords = ivec3(floor(1024 * u), floor(1024 * v), index);
+    ivec3 nextImage  = ivec3(1024, 0, 0);
+
+    material.albedo     = imageLoad(megaTexture, baseCoords).rgb;
+    material.emissive   = imageLoad(megaTexture, baseCoords + nextImage).rgb;
+    material.gloss      = imageLoad(megaTexture, baseCoords + 2 * nextImage).r;
+    material.normal     = imageLoad(megaTexture, baseCoords + 3 * nextImage).rgb;
+    material.normal     = 2.0 * material.normal - vec3(1.0); 
+    material.specular   = imageLoad(megaTexture, baseCoords + 4 * nextImage).rgb;
+
+    return material;
 }

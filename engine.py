@@ -1,4 +1,5 @@
 from config import *
+import megatexture
 import material
 import screen_quad
 import buffer
@@ -20,15 +21,19 @@ class Engine:
         self.screenWidth = width
         self.screenHeight = height
 
-        self.makeAssets()
+        self.targetFrameRate = 60
+        self.frameRateMargin = 10
         
-        self.createNoiseTexture()
+        self.makeAssets()
     
     def makeAssets(self) -> None:
         """ Make all the stuff. """
 
         self.screenQuad = screen_quad.ScreenQuad()
-        self.colorBuffer = material.Material(self.screenWidth, self.screenHeight)
+        self.colorBuffer = material.Material(minDetail = 8, maxDetail = 1024)
+
+        self.createNoiseTexture()
+        self.createMegaTexture()
 
         self.sphereBuffer = buffer.Buffer(size = 1024, binding = 1, floatCount = 8)
         self.planeBuffer = buffer.Buffer(size = 1024, binding = 2, floatCount = 20)
@@ -39,7 +44,6 @@ class Engine:
         self.rayTracerShader = self.createComputeShader("shaders/rayTracer.txt")
     
     def createNoiseTexture(self) -> None:
-
         """
             generate four screens' worth of noise
         """
@@ -75,7 +79,20 @@ class Engine:
             0,GL_RGBA,GL_FLOAT,bytes(self.noiseData)
         )
     
-    def createShader(self, vertexFilepath: str, fragmentFilepath: str) -> None:
+    def createMegaTexture(self) -> None:
+        """
+            Load all the textures.
+        """
+
+        filenames = [
+            "AlienArchitecture", "AlternatingColumnsConcreteTile", "BiomechanicalPlumbing", 
+            "CarvedStoneFloorCheckered", "ChemicalStrippedConcrete", "ClayBrick",
+            "CrumblingBrickWall", "DiamondSquareFlourishTiles", "EgyptianHieroglyphMetal"
+        ]
+
+        self.megaTexture = megatexture.MegaTexture(filenames)
+    
+    def createShader(self, vertexFilepath: str, fragmentFilepath: str) -> int:
         """
             Read source code, compile and link shaders.
             Returns the compiled and linked program.
@@ -92,7 +109,7 @@ class Engine:
         
         return shader
     
-    def createComputeShader(self, filepath: str) -> None:
+    def createComputeShader(self, filepath: str) -> int:
         """
             Read source code, compile and link shaders.
             Returns the compiled and linked program.
@@ -116,7 +133,7 @@ class Engine:
 
         for i,_plane in enumerate(_scene.planes):
             self.planeBuffer.recordPlane(i, _plane)
-        
+
         glUniform2iv(glGetUniformLocation(self.rayTracerShader, "objectCounts"), 1, _scene.objectCounts)
 
     def prepareScene(self, _scene: scene.Scene) -> None:
@@ -126,10 +143,11 @@ class Engine:
 
         glUseProgram(self.rayTracerShader)
 
+        correction_factor = self.screenHeight / self.screenWidth
         glUniform3fv(glGetUniformLocation(self.rayTracerShader, "viewer.position"), 1, _scene.camera.position)
         glUniform3fv(glGetUniformLocation(self.rayTracerShader, "viewer.forwards"), 1, _scene.camera.forwards)
         glUniform3fv(glGetUniformLocation(self.rayTracerShader, "viewer.right"), 1, _scene.camera.right)
-        glUniform3fv(glGetUniformLocation(self.rayTracerShader, "viewer.up"), 1, _scene.camera.up)
+        glUniform3fv(glGetUniformLocation(self.rayTracerShader, "viewer.up"), 1, correction_factor * _scene.camera.up)
 
         if _scene.outDated:
             self.updateScene(_scene)
@@ -139,6 +157,9 @@ class Engine:
 
         glActiveTexture(GL_TEXTURE3)
         glBindImageTexture(3, self.noiseTexture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F)
+
+        glActiveTexture(GL_TEXTURE4)
+        glBindImageTexture(4, self.megaTexture.texture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RGBA32F)
         
     def renderScene(self, _scene: scene.Scene) -> None:
         """
@@ -151,11 +172,11 @@ class Engine:
 
         self.colorBuffer.writeTo()
         
-        glDispatchCompute(int(self.screenWidth/8), int(self.screenHeight/8), 1)
+        subgroup_count = int(self.colorBuffer.sizes[self.colorBuffer.detailLevel] / 8)
+        glDispatchCompute(subgroup_count, subgroup_count, 1)
   
         # make sure writing to image has finished before read
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
-
         self.drawScreen()
 
     def drawScreen(self) -> None:
@@ -163,7 +184,16 @@ class Engine:
         glBindFramebuffer(GL_FRAMEBUFFER, 0)
         self.colorBuffer.readFrom()
         self.screenQuad.draw()
-        pg.display.flip()
+        glFlush()
+    
+    def adaptResolution(self, frameRate: int) -> None:
+
+        if frameRate > self.targetFrameRate + self.frameRateMargin:
+            #increase resolution
+            self.colorBuffer.upsize()
+        elif frameRate < self.targetFrameRate - self.frameRateMargin:
+            #reduce resolution
+            self.colorBuffer.downsize()
     
     def destroy(self) -> None:
         """
@@ -172,8 +202,8 @@ class Engine:
         glUseProgram(self.rayTracerShader)
         glMemoryBarrier(GL_ALL_BARRIER_BITS)
         glDeleteProgram(self.rayTracerShader)
-        self.screenQuad.destroy()
         self.colorBuffer.destroy()
+        self.screenQuad.destroy()
         self.sphereBuffer.destroy()
         self.planeBuffer.destroy()
         glDeleteTextures(1, (self.noiseTexture,))

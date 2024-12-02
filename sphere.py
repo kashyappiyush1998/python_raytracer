@@ -6,8 +6,8 @@ class Sphere:
     """
 
     def __init__(self, 
-        center: list[float], radius: float, 
-        color: list[float], roughness: float):
+        center: list[float, float, float], radius: float, 
+        color: list[float, float, float], roughness: float):
         """
             Create a new sphere
 

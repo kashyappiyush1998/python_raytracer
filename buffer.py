@@ -61,8 +61,7 @@ class Buffer:
         self.hostMemory[baseIndex + 12 : baseIndex + 15]    = _plane.normal[:]
         self.hostMemory[baseIndex + 15]                     = _plane.vMax
 
-        self.hostMemory[baseIndex + 16 : baseIndex + 19] = _plane.color[:]
-        self.hostMemory[baseIndex + 19] = _plane.roughness
+        self.hostMemory[baseIndex + 16] = _plane.material_index
         self.elements_updated += 1
     
     def readFrom(self) -> None:
