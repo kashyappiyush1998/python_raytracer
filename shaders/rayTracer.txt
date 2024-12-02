@@ -37,8 +37,8 @@ struct RenderState {
     vec3 color;
     vec3 position;
     vec3 normal;
-    float roughness;
     bool hit;
+    float roughness;
 };
 
 // input/output
@@ -67,8 +67,9 @@ void main() {
     ivec2 pixel_coords = ivec2(gl_GlobalInvocationID.xy);
     ivec2 screen_size = imageSize(img_output);
 
-    vec3 final_color = vec3(0.0);
-    for(int i = 0; i < 4; i++) {
+    vec3 finalColor = vec3(0.0);
+    for (int i = 0; i < 4; i++) {
+
         vec2 screenDeflection = imageLoad(
             noise, 
             ivec2(
@@ -76,46 +77,54 @@ void main() {
                 pixel_coords.y
             )
         ).xy;
-    
-
-        float horizontalCoefficient = ((float(pixel_coords.x) * 2 - screen_size.x) / screen_size.x);
-        float verticalCoefficient = ((float(pixel_coords.y) * 2 - screen_size.y) / screen_size.x);
+        
+        float horizontalCoefficient = float(pixel_coords.x) + screenDeflection.x;
+        horizontalCoefficient = (horizontalCoefficient * 2 - screen_size.x) / screen_size.x;
+        
+        float verticalCoefficient = float(pixel_coords.y) + screenDeflection.y;
+        verticalCoefficient = (verticalCoefficient * 2 - screen_size.y) / screen_size.x;
 
         Ray ray;
         ray.origin = viewer.position;
         ray.direction = viewer.forwards + horizontalCoefficient * viewer.right + verticalCoefficient * viewer.up;
-
+    
         vec3 pixel = vec3(1.0);
 
         for (int bounce = 0; bounce < 4; bounce++) {
-
             RenderState renderState = trace(ray);
 
             //early exit
             if (!renderState.hit) {
                 break;
             }
-            
+        
             //unpack color
             pixel = pixel * renderState.color;
 
             //set up ray for next trace
             ray.origin = renderState.position;
             ray.direction = reflect(ray.direction, renderState.normal);
-
-            vec3 variation = imageLoad(noise, ivec2(pixel_coords.x+bounce*screen_size.x, pixel_coords.y)).xyz;
-
+            vec3 variation = imageLoad(
+                noise, 
+                ivec2(
+                    pixel_coords.x + bounce * screen_size.x,
+                    pixel_coords.y
+                )
+            ).xyz;
             ray.direction = normalize(ray.direction + renderState.roughness * variation);
+
         }
-        final_color += 0.25 * pixel;
+
+        finalColor += 0.25 * pixel;
     }
 
-    imageStore(img_output, pixel_coords, vec4(final_color,1.0));
+    imageStore(img_output, pixel_coords, vec4(finalColor,1.0));
 }
 
 RenderState trace(Ray ray) {
 
     RenderState renderState;
+    renderState.hit = false;
     renderState.color = vec3(1.0);
     bool hitSomething = false;
     
@@ -126,22 +135,24 @@ RenderState trace(Ray ray) {
         hit(ray, spheres[i], 0.001, nearestHit, renderState);
 
         if (renderState.hit) {
-            hitSomething = true;
             nearestHit = renderState.t;
+            hitSomething = true;
         }
     }
 
     for (int i = 0; i < objectCounts.y; i++) {
     
        hit(ray, planes[i], 0.001, nearestHit, renderState);
-       
+    
        if (renderState.hit) {
-            hitSomething = true;
             nearestHit = renderState.t;
+            hitSomething = true;
         }
     }
 
-    renderState.hit = hitSomething;
+    if (hitSomething) {
+        renderState.hit = true;
+    }
         
     return renderState;
 }
@@ -192,8 +203,8 @@ void hit(Ray ray, Plane plane, float tMin, float tMax, inout RenderState renderS
                 renderState.position = testPoint;
                 renderState.t = t;
                 renderState.color = plane.color;
-                renderState.normal = plane.normal;
                 renderState.roughness = plane.roughness;
+                renderState.normal = plane.normal;
                 renderState.hit = true;
                 return;
             }

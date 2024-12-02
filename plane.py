@@ -6,11 +6,11 @@ class Plane:
     """
 
 
-    def __init__(self, 
-            normal: np.ndarray, tangent: np.ndarray, 
-            bitangent: np.ndarray, uMin: float, uMax: float, 
-            vMin: float, vMax: float, 
-            center: np.ndarray, color: np.ndarray, roughness: float):
+    def __init__(
+        self, normal: list[float], tangent: list[float], 
+        bitangent: list[float], uMin: float, 
+        uMax: float, vMin: float, vMax: float, 
+        center: list[float], color: list[float], roughness: float):
         """
             Create a new plane
 
